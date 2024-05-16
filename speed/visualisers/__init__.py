@@ -1,2 +1,3 @@
 from speed.visualisers.global_visualiser import GlobalVisualiser
 from speed.visualisers.baby_visualiser import BabyVisualiser
+from speed.visualisers.agreement_visualiser import AgreementVisualiser

@@ -1,3 +1,4 @@
+import numpy as np
 
 def dict_to_markdown_table(data):
     assert isinstance(data, dict), "Invalid data. Please provide a dictionary."
@@ -7,7 +8,14 @@ def dict_to_markdown_table(data):
             data[key] = f"{value:.3f}"
         elif isinstance(value, tuple):
             if len(value) == 2:
-                data[key] = f"{value[0]:.3f} ({value[1]:.3f})"
+                if isinstance(value[1], list):
+                    if len(value[1]) == 3:
+                        data[key] = f"{value[0]:.3f} ({value[1][0]:.3f} {value[1][1]:.3f}, {value[1][2]:.3f})"
+                elif isinstance(value[1], np.ndarray):
+                    if len(value[1]) == 2:
+                        data[key] = f"{value[0]:.3f} ({value[1][0]:.3f}, {value[1][1]:.3f})"
+                else:
+                    data[key] = f"{value[0]:.3f} ({value[1]:.3f})"
             elif len(value) == 3:
                 data[key] = f"{value[0]:.3f} ({value[1]:.3f}, {value[2]:.3f})"
     max_key_length = max(len(str(key)) for key in data.keys())

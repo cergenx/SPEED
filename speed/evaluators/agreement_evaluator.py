@@ -30,7 +30,7 @@ class AgreementEvaluator:
         _per_annotator_ck_delta = cohens_kappa_pairwise_delta(self.annotations, self.predictions)
         results["Cohen's Kappa Delta"] = _per_annotator_ck_delta
         results['Fleiss\' Kappa'] = fleiss_kappa(self.annotations, self.predictions)
-        results['Fleiss\' Kappa Delta'] = fleiss_kappa_delta(self.annotations, self.predictions)
-        results['Inferiority Test (p-value)'] = fleiss_kappa_delta_bootstrap(self.annotations, self.predictions, N=1000)
+        results['Fleiss\' Kappa Delta'], _ = fleiss_kappa_delta(self.annotations, self.predictions)
+        results['Inferiority Test (p-value)'], _ = fleiss_kappa_delta_bootstrap(self.annotations, self.predictions, N=1000, per_annotator=False)
 
         return results
