@@ -5,7 +5,7 @@ import numpy as np
 from speed.data_loaders.dataset_loader import DatasetLoader
 
 class PredictionsLoader:
-    def __init__(self, data_path, dataset_loader: DatasetLoader):
+    def __init__(self, data_path, dataset_loader: DatasetLoader, sample_freq=1):
         """
         Constructor for the PredictionsLoader class.
         """
@@ -15,6 +15,7 @@ class PredictionsLoader:
 
         self.masks = dataset_loader.data['masks']
         self.raw_annotations = dataset_loader.data['raw']
+        self.sample_freq = sample_freq
 
     def load_predictions(self, format='json'):
         """

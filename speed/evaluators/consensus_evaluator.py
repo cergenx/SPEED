@@ -4,10 +4,11 @@ class ConsensusEvaluator:
     """
     Class for evaluating consensus predictions.
     """
-    def __init__(self, annotations, predictions):
+    def __init__(self, annotations, predictions, sample_rate=1):
         self.annotations = annotations
         self.predictions = predictions
         self._validate_input()
+        self.sample_freq = sample_rate
 
     def _validate_input(self):
         """
@@ -41,10 +42,15 @@ class ConsensusEvaluator:
         _specificity_baby = specificity_baby(self.annotations, self.predictions)
         _ppv_baby = ppv_baby(self.annotations, self.predictions)
         _npv_baby = npv_baby(self.annotations, self.predictions)
-        _false_detection_per_hour = false_event_detections_per_hour(self.annotations, self.predictions, sample_rate=1)
-        _false_detection_per_hour_non_sz = false_event_detections_per_hour(self.annotations, self.predictions, sample_rate=1, non_seizure_cohort_only=True)
+        _false_detection_per_hour = false_event_detections_per_hour(
+            self.annotations, self.predictions, sample_rate=self.sample_freq
+        )
+        _false_detection_per_hour_non_sz = false_event_detections_per_hour(
+            self.annotations, self.predictions, sample_rate=self.sample_freq, non_seizure_cohort_only=True
+        )
         _, _, _seizure_burden_corr_sz_only = seizure_burden(self.annotations, self.predictions, seizure_cohort_only=True)
         _, _, _seizure_burden_corr_all = seizure_burden(self.annotations, self.predictions)
+        xentropy = cross_entropy(self.annotations, self.predictions)
 
         results = {
             'AUC_cc': _auc_cc,
@@ -67,6 +73,7 @@ class ConsensusEvaluator:
             'PPV (baby)': _ppv_baby,
             'NPV (baby)': _npv_baby,
             'False detections / hour (non-szr only)': (_false_detection_per_hour, _false_detection_per_hour_non_sz,),
-            'Seizure Burden r (szr only)': (_seizure_burden_corr_all,  _seizure_burden_corr_sz_only)
+            'Seizure Burden r (szr only)': (_seizure_burden_corr_all,  _seizure_burden_corr_sz_only),
+            'Cross-entropy': xentropy
         }
         return results

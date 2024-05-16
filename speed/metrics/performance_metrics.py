@@ -1,8 +1,8 @@
 import numpy as np
 
-from sklearn.metrics import roc_auc_score, matthews_corrcoef, recall_score, precision_score, cohen_kappa_score, average_precision_score, precision_recall_curve
+from sklearn.metrics import roc_auc_score, matthews_corrcoef, recall_score, precision_score, cohen_kappa_score, average_precision_score, precision_recall_curve, log_loss
 from scipy.stats import pearsonr, spearmanr, norm
-from statsmodels.stats.inter_rater import fleiss_kappa as _fleiss_kappa, aggregate_raters
+from statsmodels.stats.inter_rater import fleiss_kappa as _fleiss_kappa
 from tqdm import tqdm
 
 
@@ -206,7 +206,7 @@ def npv(annotations, predictions):
 
     return _format(precision_score(all_annotations, all_preds, pos_label=0))
 
-def _event_prediction_stats(annotation, prediction):
+def _event_prediction_stats(annotation, prediction, sample_rate=1):
     """
     Calculate event based prediction masks and durations for a single baby.
 
@@ -231,7 +231,7 @@ def _event_prediction_stats(annotation, prediction):
                 detection.append(1)
             else:
                 detection.append(0)
-            duration.append(end - start)
+            duration.append((end - start)/sample_rate)
         return np.array(detection), np.array(duration)
 
     predicted_events_detection, predicted_event_duration = _detections(prediction, annotation)
@@ -402,10 +402,11 @@ def npv_baby(annotations, predictions):
     npv = tn / (tn + fn)
     return _format(npv)
 
-def seizure_burden(annotations, predictions, seizure_cohort_only=False):
+def seizure_burden(annotations, predictions, sample_rate=1, seizure_cohort_only=False):
     """
     Calculate the seizure burden on a per-baby basis.
     Seizure burden is defined as the fraction of time spent in seizure in minutes/hour.
+    Here we esitimate from hourly windows
 
     :param annotations: Annotations for each baby.
     :param predictions: Predictions for each baby.
@@ -419,12 +420,28 @@ def seizure_burden(annotations, predictions, seizure_cohort_only=False):
         masks = [m for m, a in zip(masks, annotations) if np.any(a)]
         annotations = [a for a in annotations if np.any(a)]
 
-    true_seizure_burden = [np.mean(a) * 60 for a in annotations]
-    pred_seizure_burden = [np.mean(m) * 60 for m in masks]
+    def create_60_mins_windows(arr):
+        duration = int(60*60*sample_rate)
+        windows = [arr[i:i+duration] for i in range(0, len(arr), duration)]
+        # if < 15 mins left over, drop it
+        if len(windows[-1]) < int(15*60*sample_rate) and len(windows)>1:
+            windows = windows[:-1]
+
+        return windows
+
+    periods_annotations = []
+    periods_masks = []
+
+    for a, m in zip(annotations, masks):
+        periods_annotations.extend(create_60_mins_windows(a))
+        periods_masks.extend(create_60_mins_windows(m))
+
+    true_seizure_burden = [np.mean(a) * 60 for a in periods_annotations]
+    pred_seizure_burden = [np.mean(m) * 60 for m in periods_masks]
 
     r = np.corrcoef(true_seizure_burden, pred_seizure_burden)[0, 1]
 
-    return _format(np.mean(pred_seizure_burden)), _format(np.mean(true_seizure_burden)), _format(r)
+    return true_seizure_burden, pred_seizure_burden, _format(r)
 
 def cohens_kappa(annotations, predictions):
     """
@@ -477,6 +494,39 @@ def cohens_kappa_pairwise_delta(annotations, predictions):
 
     return _format(delta)
 
+def _aggregate_raters_binary(data, n_cat=2):
+    '''Optimized aggregation for binary data.
+
+    Parameters
+    ----------
+    data : array_like, 2-Dim
+        Binary data containing category assignment with subjects in rows and
+        raters in columns. Values must be 0 or 1.
+    n_cat : int, optional
+        Number of categories. Default is 2, which is the only valid value
+        for binary data. Included for interface consistency.
+
+    Returns
+    -------
+    arr : ndarray, (n_rows, n_cat)
+        Contains counts of raters that assigned each category level to individuals.
+        Subjects are in rows, category levels (0 and 1) in columns.
+    '''
+    assert n_cat == 2, 'Binary data must have 2 categories.'
+    data = np.asarray(data, dtype=int)  # Ensure data is an integer array
+
+    # Since data is binary, simply sum the ones for each row and subtract from
+    # the total number of raters to get counts for zeros.
+    sum_ones = data.sum(axis=1).reshape(-1, 1)
+    sum_zeros = data.shape[1] - sum_ones
+
+    # Stack the counts for zeros and ones horizontally
+    counts = np.hstack((sum_zeros, sum_ones))
+
+    cat_uni = np.array([0, 1])  # Categories are known to be 0 and 1
+
+    return counts, cat_uni
+
 def fleiss_kappa(annotations, predictions):
     """
     Calculate Fleiss' kappa concatenated predictions and annotations.
@@ -487,8 +537,8 @@ def fleiss_kappa(annotations, predictions):
     _verify_mulitple_annotators(annotations)
     ai = np.concatenate([pred['mask'] for pred in predictions])
     humans = np.concatenate(annotations, axis=1)
-    ratings = np.stack([ai] + humans).T
-    freq, _ = aggregate_raters(ratings)
+    ratings = np.vstack((ai, humans)).T
+    freq, _ = _aggregate_raters_binary(ratings)
     return _format(_fleiss_kappa(freq))
 
 def fleiss_kappa_delta(annotations, predictions):
@@ -503,7 +553,7 @@ def fleiss_kappa_delta(annotations, predictions):
     ai = np.concatenate([pred['mask'] for pred in predictions])
     humans = np.concatenate(annotations, axis=1)
     human_ratings = np.stack(humans).T
-    freq_human, _ = aggregate_raters(human_ratings)
+    freq_human, _ = _aggregate_raters_binary(human_ratings)
     kappa_human = _fleiss_kappa(freq_human)
 
     kappa_ai = np.zeros(annotations[0].shape[0])
@@ -511,15 +561,16 @@ def fleiss_kappa_delta(annotations, predictions):
         annots = humans.copy()
         annots[i] = ai
         ai_and_human_ratings = np.stack(annots).T
-        freq_ai, _ = aggregate_raters(ai_and_human_ratings)
+        freq_ai, _ = _aggregate_raters_binary(ai_and_human_ratings)
         kappa_ai_val = _fleiss_kappa(freq_ai)
         kappa_ai[i] = kappa_ai_val
 
-    delta = np.mean(kappa_ai) - kappa_human
-    return _format(delta)
+    delta_mean = np.mean(kappa_ai) - kappa_human
+    delta_all = [kappa - kappa_human for kappa in kappa_ai]
+    return _format(delta_mean), delta_all
 
 
-def fleiss_kappa_delta_bootstrap(annotations, predictions, N=1000):
+def fleiss_kappa_delta_bootstrap(annotations, predictions, N=1000, per_annotator=False):
     """
     Assess non-inferiority of AI using the statistical significance of Fleiss' kappa delta.
     A single bootsrap sample is drawn by resampling the annotations per baby with replacement.
@@ -534,15 +585,51 @@ def fleiss_kappa_delta_bootstrap(annotations, predictions, N=1000):
     :return: p-value for AI inferiority
     """
     _verify_mulitple_annotators(annotations)
-    deltas = np.zeros(N)
+    if per_annotator:
+        deltas = np.zeros((annotations[0].shape[0], N))
+    else:
+        deltas = np.zeros(N)
     for i in tqdm(range(N), desc='Running boostrap for non-inferiority test'):
         indices = np.random.choice(len(annotations), len(annotations), replace=True)
         sampled_annotations = [annotations[index] for index in indices]
         sampled_predictions = [predictions[index] for index in indices]
-        deltas[i] = fleiss_kappa_delta(sampled_annotations, sampled_predictions)
+        mean_delta, all_delta = fleiss_kappa_delta(sampled_annotations, sampled_predictions)
+        if per_annotator:
+            deltas[:, i] = all_delta
+        else:
+            deltas[i] = mean_delta
 
     # assume deltas follow a normal distribution
     # find p-value for null hypothesis that AI is non-inferior
-    p_value = 1 - norm.cdf(0, np.mean(deltas), np.std(deltas))
+    if per_annotator:
+        std = np.std(np.mean(deltas, axis=0))
+        mean = np.mean(deltas)
+        p_value_mean = 2 * min(norm.cdf(0, mean, std), 1 - norm.cdf(0, mean, std))
+        print(f"{mean:.3f} ({mean - 1.96 * std:.3f}, {mean + 1.96 * std:.3f}) 95% CI, p={p_value_mean:.3f}")
+    else:
+        p_value_mean = 2 * min(norm.cdf(0, np.mean(deltas), np.std(deltas)), 1 - norm.cdf(0, np.mean(deltas), np.std(deltas)))
+        print(f"{np.mean(deltas):.3f} ({np.mean(deltas) - 1.96 * np.std(deltas):.3f}, {np.mean(deltas) + 1.96 * np.std(deltas):.3f}) 95% CI, p={p_value_mean:.3f}")
 
-    return _format(p_value)
+    if per_annotator:
+        stds = np.std(deltas, axis=1)
+        means = np.mean(deltas, axis=1)
+        p_values = [_format(2 * min(norm.cdf(0, means[i], stds[i]), 1 - norm.cdf(0, means[i], stds[i]))) for i in range(annotations[0].shape[0])]
+        for i in range(annotations[0].shape[0]):
+            print(f"{means[i]:.3f} ({means[i] - 1.96 * stds[i]:.3f}, {means[i] + 1.96 * stds[i]:.3f}) 95% CI, p={p_values[i]:.3f}")
+
+        p = (p_value_mean, p_values)
+    else:
+        p = p_value_mean
+
+    return p, deltas
+
+def cross_entropy(annotations, predictions):
+    """
+    Calculate the cross entropy across all babies, by concatenating all annotations and predictions.
+    :param annotations: Annotations for each baby.
+    :param predictions: Predictions for each baby.
+    :return: cross entropy
+    """
+    all_annotations, _, all_probs = _concatenate_preds_and_annos(annotations, predictions)
+
+    return _format(log_loss(all_annotations, all_probs))

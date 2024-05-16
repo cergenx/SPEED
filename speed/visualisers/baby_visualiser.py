@@ -9,12 +9,13 @@ class BabyVisualiser(BaseVisualiser):
     """
     Visualiser for baby level metrics
     """
-    def __init__(self, annotations, predictions, baby_id):
+    def __init__(self, annotations, predictions, baby_id, sample_rate=1):
         super().__init__(annotations, predictions)
 
         self.baby_id = baby_id
         self.annotations = annotations[baby_id]
         self.predictions = predictions[baby_id]
+        self.sample_freq = sample_rate
 
     def visualise(self):
         """

@@ -13,9 +13,10 @@ class BaseVisualiser(ABC):
     """
     Visualiser for global metrics
     """
-    def __init__(self, annotations, predictions):
+    def __init__(self, annotations, predictions, sample_rate=1):
         self.annotations = annotations
         self.predictions = predictions
+        self.sample_freq = sample_rate
 
         self.colors = sns.color_palette("muted")
         self.current_color = 0

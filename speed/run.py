@@ -8,10 +8,11 @@ from speed.utils import dict_to_markdown_table
 def main(args):
    # Initialize DataLoader
     dataset_loader = HelsinkiDatasetLoader(args.annotations_path)
+    sample_freq = 1
 
     # Load data and perform evaluation
     dataset_loader.load_dataset(consensus='unanimous')
-    predictions = PredictionsLoader(args.prediction_path , dataset_loader).load_predictions()
+    predictions = PredictionsLoader(args.prediction_path , dataset_loader, sample_freq=sample_freq).load_predictions()
 
     evaluator = ConsensusEvaluator(dataset_loader.data['annotations'], predictions)
     results_consensus = evaluator.evaluate()
