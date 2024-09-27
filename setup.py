@@ -3,8 +3,13 @@ from setuptools import setup, find_packages
 
 setup(
     name='speed',
-    version='0.1.2',
+    version='0.1.3',
     packages=find_packages(include=['speed', 'speed.*']),
+    include_package_data=True,
+    package_data={
+        'speed': ['data/**/*'],
+    },
+
     install_requires=[
         'numpy>=1.24.3',
         'scipy>=1.10.1',
