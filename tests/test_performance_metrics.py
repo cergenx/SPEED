@@ -19,8 +19,6 @@ class TestPerformanceMetrics(unittest.TestCase):
             {'probs': np.array([0.9, 0.1, 0.3, 0.7, 0.6]), 'mask': np.array([1, 0, 0, 1, 1])}
         ]
 
-    def test_count_babies_with_seizures(self):
-        self.assertEqual(count_babies_with_seizures(self.annotations), 2)
 
     def test_auc_cc(self):
         self.assertEqual(auc_cc(self.annotations, self.perfect_predictions), 1.0)

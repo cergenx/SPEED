@@ -1,6 +1,6 @@
-
 import scipy.io
 import numpy as np
+from pathlib import Path
 
 class DatasetLoader:
     def __init__(self, data_path):
@@ -9,7 +9,7 @@ class DatasetLoader:
 
         :param data_path: Path to the dataset file.
         """
-        self.data_path = data_path
+        self.data_path = Path(data_path)
         self.loaded = False
         self.data = None
 
@@ -19,8 +19,28 @@ class DatasetLoader:
         """
         raise NotImplementedError("This method should be implemented in subclass.")
 
+    def get_data(self):
+        """
+        Return the loaded data.
+        """
+        if not self.loaded:
+            raise ValueError("Dataset not loaded. Call load_dataset() first.")
+        return self.data
+
 
 class HelsinkiDatasetLoader(DatasetLoader):
+    DEFAULT_PATH = Path(__file__).parents[1] / 'data' / 'helsinki' / 'annotations_2017.mat'
+
+    def __init__(self, data_path=None):
+        """
+        Constructor for HelsinkiDatasetLoader.
+
+        :param data_path: Optional path to the dataset file. If not provided, uses the default path.
+        """
+        super().__init__(data_path or self.DEFAULT_PATH)
+        if not self.data_path.exists():
+            raise FileNotFoundError(f"Dataset file not found: {self.data_path}")
+
     def load_dataset(self, consensus='unanimous'):
         """
         Load and process the Helsinki dataset.
@@ -28,7 +48,7 @@ class HelsinkiDatasetLoader(DatasetLoader):
         :param consensus: Type of consensus ('unanimous', 'majority', or 'all').
         :return: Processed dataset.
         """
-        annotations = scipy.io.loadmat(self.data_path)['annotat_new'].squeeze()
+        annotations = scipy.io.loadmat(str(self.data_path))['annotat_new'].squeeze()
         processed_annotations, masks = self._process_annotations(annotations, consensus)
         self.loaded = True
         self.data = {
@@ -38,6 +58,7 @@ class HelsinkiDatasetLoader(DatasetLoader):
             'num_babies': annotations.shape[0],
             'num_annotators': annotations[0].shape[0]
         }
+        return self.data
 
     def _process_annotations(self, annotations, consensus):
         """
